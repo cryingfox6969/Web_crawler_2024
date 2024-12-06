@@ -20,6 +20,10 @@ if not os.path.exists(output_folder):
 
 # 定義爬取函數
 def scrape_url(url):
+    # 提取文章編號
+    match = re.search(r'/p/(\d+)', url)
+    article_id = match.group(1) if match else "unknown"
+
     # 啟動 undetected-chromedriver
     driver = uc.Chrome()
     driver.get(url)
@@ -31,7 +35,8 @@ def scrape_url(url):
         "time": "",
         "article": "",
         "pictures": [],
-        "tags": []
+        "tags": [],
+        "url": url  # 新增文章連結欄位
     }
 
     # 等待頁面加載完成
@@ -70,7 +75,7 @@ def scrape_url(url):
     # 取得文章圖片
     try:
         art_pics = driver.find_elements(By.CSS_SELECTOR, '.c1golu5u img[decoding*="async"]')
-        data["pictures"] = "\n"+[art_pic.get_attribute("src") for art_pic in art_pics]
+        data["pictures"] = [art_pic.get_attribute("src") for art_pic in art_pics]
     except:
         print("Failed to get art_pic url")
 
@@ -80,13 +85,6 @@ def scrape_url(url):
         data["tags"] = [tag.text for tag in tags]
     except:
         print("Failed to get tags")
-
-    #press old_to_new_button ""
-    try:
-        old_to_new_button = driver.find_element(By.XPATH, "//button[.//div[text()='由舊至新']]")
-        driver.execute_script("arguments[0].click();", old_to_new_button)
-    except:
-        print("press old_to_new unvalid")
 
     # 設定儲存留言的集合以避免重複
     comments = set()
@@ -100,16 +98,13 @@ def scrape_url(url):
     # 開始滾動並提取留言
     try:
         while True:
-            #展開留言
+            # 展開留言
             try:
                 extend_buttons = driver.find_elements(By.XPATH, "//button[contains(text(), '查看其他')]")
                 for extend_button in extend_buttons:
-                    print(extend_button.text)
                     driver.execute_script("arguments[0].click();", extend_button)
             except:
-                print("press old_to_new unvalid")
-
-            #time.sleep(1) #如果留言很多可能需要暫停來載入
+                pass
 
             # 找出所有留言元素
             comment_elements = driver.find_elements(By.CSS_SELECTOR, "[data-key^='comment-']")
@@ -165,18 +160,20 @@ def scrape_url(url):
     # 清理標題，移除無法作為檔名的特殊字元
     cleaned_title = re.sub(r'[\\/*?:"<>|]', "", data["title"])
     
-    # 確保標題不為空，避免無效檔案名
-    if not cleaned_title:
-        cleaned_title = "default_title"
+    # 將文章編號加入檔案標題
+    if cleaned_title:
+        cleaned_title = f"{article_id}_{cleaned_title}"
+    else:
+        cleaned_title = f"default_title_{article_id}"
 
     # 使用清理後的標題生成完整檔案路徑
     csv_file = os.path.join(output_folder, f"{cleaned_title}.csv")
     with open(csv_file, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         
-        # 寫入文章資訊
-        writer.writerow(["Title", "Author", "Time", "Article", "Pictures", "Tags"])
-        writer.writerow([data["title"], data["author"], data["time"], data["article"], "\n ".join(data["pictures"]), "; ".join(data["tags"])])
+        # 寫入文章資訊，新增 URL 欄位
+        writer.writerow(["Title", "Author", "Time", "Article", "Pictures", "Tags", "URL"])
+        writer.writerow([data["title"], data["author"], data["time"], data["article"], "\n".join(data["pictures"]), "; ".join(data["tags"]), data["url"]])
         
         # 寫入留言資訊標題
         writer.writerow([])
